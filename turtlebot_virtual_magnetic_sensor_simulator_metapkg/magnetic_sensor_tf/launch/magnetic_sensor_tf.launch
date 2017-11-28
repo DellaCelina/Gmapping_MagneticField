@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <node name="magnetic_sensor_tf" pkg="magnetic_sensor_tf" type="magnetic_sensor_tf" output="screen">
+
+    <param name="mag1_x" type="double" value="0.1"/><!-- meter -->
+    <param name="mag1_y" type="double" value="-0.1"/>
+    <param name="mag1_z" type="double" value="0.42"/>
+
+    <param name="mag2_x" type="double" value="0.1"/>
+    <param name="mag2_y" type="double" value="0.1"/>
+    <param name="mag2_z" type="double" value="0.42"/>
+
+    <param name="mag3_x" type="double" value="-0.1"/>
+    <param name="mag3_y" type="double" value="-0.1"/>
+    <param name="mag3_z" type="double" value="0.42"/>
+
+    <param name="mag4_x" type="double" value="-0.1"/>
+    <param name="mag4_y" type="double" value="0.1"/>
+    <param name="mag4_z" type="double" value="0.42"/>
+
+    <param name="mag5_x" type="double" value="0.0"/>
+    <param name="mag5_y" type="double" value="0.0"/>
+    <param name="mag5_z" type="double" value="0.42"/>
+
+  </node>
+</launch>

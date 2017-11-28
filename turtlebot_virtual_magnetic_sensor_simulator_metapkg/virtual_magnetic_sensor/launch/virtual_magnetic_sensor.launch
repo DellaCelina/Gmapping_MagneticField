@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+
+<!-- run only this node -->
+
+<launch>
+
+    <node name="virtual_magnetic_sensor" pkg="virtual_magnetic_sensor" type="virtual_magnetic_sensor" output="screen">
+
+        <param name="map_file" type="str" value="/home/d/catkin_ws/src/turtlebot_virtual_magnetic_sensor_simulator_metapkg/virtual_magnetic_sensor/map/magnetic_map.txt"/>
+        <param name="map_x_num" type="int" value="28"/><!-- x point number -->
+        <param name="map_y_num" type="int" value="13"/>
+        <param name="map_grid_x_size" type="double" value="0.2"/><!-- meter -->
+        <param name="map_grid_y_size" type="double" value="0.15"/>
+        <param name="reverse_x_axis_dir" type="int" value="0"/><!-- 1 is reverse activate -->
+        <param name="reverse_y_axis_dir" type="int" value="1"/>
+
+        <!--
+        <param name="mag1_x" type="double" value="0.1"/>
+        <param name="mag1_y" type="double" value="-0.1"/>
+        <param name="mag1_z" type="double" value="0.42"/>
+
+        <param name="mag2_x" type="double" value="0.1"/>
+        <param name="mag2_y" type="double" value="0.1"/>
+        <param name="mag2_z" type="double" value="0.42"/>
+
+        <param name="mag3_x" type="double" value="-0.1"/>
+        <param name="mag3_y" type="double" value="-0.1"/>
+        <param name="mag3_z" type="double" value="0.42"/>
+
+        <param name="mag4_x" type="double" value="-0.1"/>
+        <param name="mag4_y" type="double" value="0.1"/>
+        <param name="mag4_z" type="double" value="0.42"/>
+
+        <param name="mag5_x" type="double" value="0.0"/>
+        <param name="mag5_y" type="double" value="0.0"/>
+        <param name="mag5_z" type="double" value="0.42"/>
+        -->
+
+        <param name="sampling_rate" type="int" value="10"/><!-- Hz, topic pub rate -->
+
+    </node>
+
+
+</launch>
+
+
+
+
+
+
+
+

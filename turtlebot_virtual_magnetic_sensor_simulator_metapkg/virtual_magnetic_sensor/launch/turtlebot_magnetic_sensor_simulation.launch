@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+
+<!-- run simulation system -->
+
+<launch>
+
+    <arg name="gazebo_gui" default="false"/>
+
+    <node name="gazebo_tf" pkg="gazebo_tf" type="gazebo_tf" output="screen">
+    </node>
+
+
+    <include file="$(find magnetic_sensor_tf)/launch/magnetic_sensor_tf.launch"/>
+
+
+    <include file="$(find turtlebot_gazebo)/launch/turtlebot_world.launch">
+    	<arg name="gui" value="$(arg gazebo_gui)" />
+	</include>
+
+
+    <include file="$(find virtual_magnetic_sensor)/launch/virtual_magnetic_sensor.launch"/>
+
+</launch>
+
+
+
+
+
+
+
+

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <node name="gazebo_tf" pkg="gazebo_tf" type="gazebo_tf" output="screen">
+
+  </node>
+  
+</launch>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+
+<!-- run rviz with save file -->
+
+<launch>
+
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find virtual_magnetic_sensor)/rviz/virtual_magnetic_sensor.rviz" />
+
+</launch>
+
+
+
+
+
+
+
+

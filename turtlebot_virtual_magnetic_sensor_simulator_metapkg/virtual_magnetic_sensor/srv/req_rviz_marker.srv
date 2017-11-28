@@ -1,0 +1,14 @@
+# req1 => select marker
+#         0~4: each mag_sensor_marker, 5: all mag_sensor_markers, 10: mag_map_marker
+
+# req2 => sub argument
+#         if mag_sensor_marker(0~5) => 0: loop disable, 1: loop enable
+#         if mag_map_marker(10) => 0: reserved, 1: get vector map, 2: get x data map, 3: get y data map, 4: get z data map 
+
+# result => if you incorrect service call req, you will receive -1
+
+
+int32 req1
+int32 req2
+---
+int32 result
