@@ -56,6 +56,9 @@ struct Vec3{
 	inline Vec3():x(0), y(0), z(0){};
 	inline Vec3(double x, double y, double z):x(x), y(y), z(z){};
 	inline Vec3 operator + (const Vec3& vec) const {return Vec3(x + vec.x, y+vec.y, z+vec.z);}
+	inline Vec3 operator - (const Vec3& vec) const {return Vec3(x - vec.x, y - vec.y, z - vec.z);}
+	inline Vec3 operator / (const float n) const {return Vec3(x / n, y / n, z / n);}
+	inline Vec3 operator * (const float n) const {return Vec3(x * n, y * n, z * n);}
 };
 
 struct PointMg{
@@ -95,7 +98,7 @@ double PointMg::entropy() const{
 	return -( x*log(x)+ (1-x)*log(1-x) );
 }
 
-typedef Map<PointAccumulator,HierarchicalArray2D<PointAccumulator> > MgMatcherMap;
+typedef Map<PointMg,HierarchicalArray2D<PointMg> > MgMatcherMap;
 
 };
 

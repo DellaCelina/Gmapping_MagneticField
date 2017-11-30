@@ -1,4 +1,5 @@
 #include <string>
+#include <sstream>
 #include <deque>
 #include <list>
 #include <map>
@@ -7,6 +8,7 @@
 #include <iomanip>
 #include <gmapping/utils/stat.h>
 #include <gmapping/gridfastslam/gridslamprocessor.h>
+#include <gmapping/scanmatcher/smmap.h>
 
 //#define MAP_CONSISTENCY_CHECK
 //#define GENERATE_TRAJECTORIES
@@ -282,7 +284,51 @@ void GridSlamProcessor::setMotionModelParameters
     m_particles.clear();
     TNode* node=new TNode(initialPose, 0, 0, 0);
     ScanMatcherMap lmap(Point(xmin+xmax, ymin+ymax)*.5, xmax-xmin, ymax-ymin, delta);
-    MgMatcherMap m_map(Point(xmin+xmax, ymin+ymax)*.5, xmax-xmin, ymax-ymin, delta);
+    MgMatcherMap m_map(Point(xmin+xmax, ymin+ymax)*.5, xmax-xmin, ymax-ymin, 0.05);
+
+    int x_num = 28;
+    int y_num = 13;
+    const float map_dist = 0.15;
+    const float dist = 0.05;
+    double map_width = x_num * map_dist;
+    double map_height = y_num * map_dist;
+    ifstream openFile("../../turtlebot_virtual_magnetic_sensor_simulator_metapkg/map/magnetic_map.txt");
+    if(openFile.is_open()){
+      string line_str;
+      int line = 0;
+      while(getline(openFile, line_str)){
+        PointMg& cell = m_map.cell(Point(line/x_num * map_dist - map_width/2, line%x_num * map_dist - map_height/2));
+        printf("Save map to %f, %f\n", line/x_num * map_dist - map_width/2, line%x_num * map_dist - map_height/2);
+        std::stringstream ss(line_str);
+        double tmp[3];
+        ss >> tmp[0];
+        ss >> tmp[1];
+        ss >> tmp[2];
+        line++;
+        cell.update(true, Vec3(tmp[0], tmp[1], tmp[2]));
+      }
+      openFile.close();
+    } 
+    else{
+      printf("cannot open mag map file...\n");
+    }
+    for(float i = 0; i< x_num*dist; i+=dist)
+      for(float j = 0; j<y_num*dist; j+=dist){
+        int v_i = (int)(i / map_dist);
+        int v_j = (int)(j / map_dist);
+        if(i - v_i==0 && j - v_j==0) continue;
+        PointMg& p1 = m_map.cell(Point(map_dist * (v_i), map_dist * (v_j)));
+        PointMg& p2 = m_map.cell(Point(map_dist * (v_i) + map_dist, map_dist * (v_j)));
+        PointMg& p3 = m_map.cell(Point(map_dist * (v_i), map_dist * (v_j) + map_dist));
+        PointMg& p4 = m_map.cell(Point(map_dist * (v_i) + map_dist, map_dist * (v_j) + map_dist));
+        
+        Vec3 x1 = p1.mean() + (p2.mean() - p1.mean()) / map_dist * (i - map_dist * v_i);
+        Vec3 x2 = p3.mean() + (p4.mean() - p3.mean()) / map_dist * (i - map_dist * v_i);
+        Vec3 rslt = x1 + (x2 - x1) / map_dist * (j - map_dist * v_j);
+        m_map.cell(Point(i, j)).update(true, rslt);
+        printf("Save map using interpolation to %f, %f\n", i, j);
+      }
+
     for (unsigned int i=0; i<size; i++){
       m_particles.push_back(Particle(lmap, m_map));
       m_particles.back().pose=initialPose;
@@ -451,8 +497,8 @@ void GridSlamProcessor::setMotionModelParameters
 	for (ParticleVector::iterator it=m_particles.begin(); it!=m_particles.end(); it++){	
     //각각 파티클에 map을 그림 
 	  m_matcher.invalidateActiveArea();
-	  m_matcher.computeActiveArea_mg(it->map, it->pose, plainReading);
-	  m_matcher.registerScan_mg(it->map, it->pose, plainReading);
+	  m_matcher.computeActiveArea_mg(it->map_mg, it->pose, plainReading);
+	  m_matcher.registerScan_mg(it->map_mg, it->pose, plainReading);
 	  
 	  // cyr: not needed anymore, particles refer to the root in the beginning!
     //현재 파티클의 위치와 센서값을 Tnode에 추가
