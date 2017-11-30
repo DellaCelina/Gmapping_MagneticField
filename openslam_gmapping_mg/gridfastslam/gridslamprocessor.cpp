@@ -288,45 +288,44 @@ void GridSlamProcessor::setMotionModelParameters
 
     int x_num = 28;
     int y_num = 13;
+    Vec3 mag_map[13][28];
     const float map_dist = 0.15;
     const float dist = 0.05;
     double map_width = x_num * map_dist;
     double map_height = y_num * map_dist;
-    ifstream openFile("../../turtlebot_virtual_magnetic_sensor_simulator_metapkg/map/magnetic_map.txt");
+    ifstream openFile("/home/d/catkin_ws/src/Gmapping_MagneticField/turtlebot_virtual_magnetic_sensor_simulator_metapkg/virtual_magnetic_sensor/map/magnetic_map.txt");
     if(openFile.is_open()){
       string line_str;
       int line = 0;
       while(getline(openFile, line_str)){
-        PointMg& cell = m_map.cell(Point(line/x_num * map_dist - map_width/2, line%x_num * map_dist - map_height/2));
-        printf("Save map to %f, %f\n", line/x_num * map_dist - map_width/2, line%x_num * map_dist - map_height/2);
         std::stringstream ss(line_str);
-        double tmp[3];
-        ss >> tmp[0];
-        ss >> tmp[1];
-        ss >> tmp[2];
+        Vec3& cell = mag_map[line/x_num][line%x_num];
+        ss >> cell.x;
+        ss >> cell.y;
+        ss >> cell.z;
+        printf("Save map vec: %f %f %f to %d %d\n", cell.x, cell.y, cell.z, line/x_num, line%x_num);
         line++;
-        cell.update(true, Vec3(tmp[0], tmp[1], tmp[2]));
       }
       openFile.close();
     } 
     else{
       printf("cannot open mag map file...\n");
     }
-    for(float i = 0; i< x_num*dist; i+=dist)
-      for(float j = 0; j<y_num*dist; j+=dist){
+    for(float i = 0; i<= (x_num-1)*map_dist; i+=dist)
+      for(float j = 0; j<= (y_num-1)*map_dist; j+=dist){
         int v_i = (int)(i / map_dist);
         int v_j = (int)(j / map_dist);
-        if(i - v_i==0 && j - v_j==0) continue;
-        PointMg& p1 = m_map.cell(Point(map_dist * (v_i), map_dist * (v_j)));
-        PointMg& p2 = m_map.cell(Point(map_dist * (v_i) + map_dist, map_dist * (v_j)));
-        PointMg& p3 = m_map.cell(Point(map_dist * (v_i), map_dist * (v_j) + map_dist));
-        PointMg& p4 = m_map.cell(Point(map_dist * (v_i) + map_dist, map_dist * (v_j) + map_dist));
+        printf("v_i : %d v_j : %d, i : %f j : %f\n", v_i, v_j, i, j);
+        Vec3& p1 = mag_map[v_j][v_i];
+        Vec3& p2 = mag_map[v_j + 1][v_i];
+        Vec3& p3 = mag_map[v_j][v_i + 1];
+        Vec3& p4 = mag_map[v_j + 1][v_i + 1];
         
-        Vec3 x1 = p1.mean() + (p2.mean() - p1.mean()) / map_dist * (i - map_dist * v_i);
-        Vec3 x2 = p3.mean() + (p4.mean() - p3.mean()) / map_dist * (i - map_dist * v_i);
+        Vec3 x1 = p1 + (p2 - p1) / map_dist * (i - map_dist * v_i);
+        Vec3 x2 = p3 + (p4 - p3) / map_dist * (i - map_dist * v_i);
         Vec3 rslt = x1 + (x2 - x1) / map_dist * (j - map_dist * v_j);
-        m_map.cell(Point(i, j)).update(true, rslt);
-        printf("Save map using interpolation to %f, %f\n", i, j);
+        m_map.cell(Point(i - map_width/2, j - map_height/2)).update(true, rslt);
+        printf("Save map vec: %f %f %f using interpolation to %f, %f\n", rslt.x, rslt.y, rslt.z, i - map_width/2, j - map_height/2);
       }
 
     for (unsigned int i=0; i<size; i++){

@@ -6,7 +6,7 @@
 
     <node name="virtual_magnetic_sensor" pkg="virtual_magnetic_sensor" type="virtual_magnetic_sensor" output="screen">
 
-        <param name="map_file" type="str" value="/home/d/catkin_ws/src/turtlebot_virtual_magnetic_sensor_simulator_metapkg/virtual_magnetic_sensor/map/magnetic_map.txt"/>
+        <param name="map_file" type="str" value="/home/d/catkin_ws/src/Gmapping_MagneticField/turtlebot_virtual_magnetic_sensor_simulator_metapkg/virtual_magnetic_sensor/map/magnetic_map.txt"/>
         <param name="map_x_num" type="int" value="28"/><!-- x point number -->
         <param name="map_y_num" type="int" value="13"/>
         <param name="map_grid_x_size" type="double" value="0.2"/><!-- meter -->
