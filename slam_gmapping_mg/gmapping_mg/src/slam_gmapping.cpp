@@ -793,11 +793,12 @@ bool SlamGMapping::addScan_mg(const gmapping_mg::MagneticFields& mg_msg, GMappin
   reading.setPose(gmap_pose);
 
   
-  printf("scanpose (%.3f): %.3f %.3f %.3f\n",
+  /*printf("scanpose (%.3f): %.3f %.3f %.3f\n",
             mg_msg.header.stamp.toSec(),
             gmap_pose.x,
             gmap_pose.y,
             gmap_pose.theta);
+  */
   /*
   ROS_DEBUG("scanpose (%.3f): %.3f %.3f %.3f\n",
             scan.header.stamp.toSec(),
@@ -871,7 +872,7 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
 }
 
 void SlamGMapping::mgCallback(const gmapping_mg::MagneticFields::ConstPtr& mg_msg){
-  printf("mgCallback()\n");
+  //printf("mgCallback()\n");
 
 	mg_count_++;
 	if((mg_count_% throttle_mg_) != 0)

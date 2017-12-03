@@ -79,6 +79,8 @@ class ScanMatcher{
 
 		// allocate this large array only once
 		IntPoint* m_linePoints;
+
+		IntPoint* m_mglinePoints[3];
 };
 
 inline double ScanMatcher::icpStep(OrientedPoint & pret, const ScanMatcherMap& map, const OrientedPoint& p, const double* readings) const{

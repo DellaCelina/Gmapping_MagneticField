@@ -48,10 +48,14 @@ ScanMatcher::ScanMatcher(): m_laserPose(0,0,0){
 */
 
    m_linePoints = new IntPoint[20000];
+   for(int i = 0; i<3; i++)
+   		m_mglinePoints[i] = new IntPoint[1000];
 }
 
 ScanMatcher::~ScanMatcher(){
 	delete [] m_linePoints;
+	for(int i = 0; i<3; i++)
+		delete [] m_mglinePoints[i];
 }
 
 void ScanMatcher::invalidateActiveArea(){
@@ -115,7 +119,98 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
 */
 
 void ScanMatcher::computeActiveArea_mg(MgMatcherMap& map, const OrientedPoint& p, const double (*reading)[3]){
+	if (m_activeAreaComputed)
+		return;
+	cout << "computr Active area" << endl;
+	OrientedPoint lp[5];
+	lp[0]=p;
+	lp[0].x+=cos(p.theta)*m_mgPose.x-sin(p.theta)*m_mgPose.y;
+	lp[0].y+=sin(p.theta)*m_mgPose.x+cos(p.theta)*m_mgPose.y;
+	lp[0].theta+=m_mgPose.theta;
 
+	IntPoint pi[5];
+	pi[0] = map.world2map(lp[0]);
+
+	lp[1] = lp[0];
+	lp[1].x += m_mgDistance * (cos(p.theta) + sin(p.theta));
+	lp[1].y += m_mgDistance * (cos(p.theta) - sin(p.theta));
+	pi[1] = map.world2map(lp[1]);
+
+	lp[2] = lp[0];
+	lp[2].x += -m_mgDistance * (cos(p.theta) + sin(p.theta));
+	lp[2].y += m_mgDistance * (cos(p.theta) - sin(p.theta));
+	pi[2] = map.world2map(lp[2]);
+	
+	lp[3] = lp[0];
+	lp[3].x += m_mgDistance * (cos(p.theta) + sin(p.theta));
+	lp[3].y += -m_mgDistance * (cos(p.theta) - sin(p.theta));
+	pi[3] = map.world2map(lp[3]);
+
+	lp[4] = lp[0];
+	lp[4].x += -m_mgDistance * (cos(p.theta) + sin(p.theta));
+	lp[4].y += -m_mgDistance * (cos(p.theta) - sin(p.theta));
+	pi[4] = map.world2map(lp[4]);
+	
+	Point min(map.map2world(0,0));
+	Point max(map.map2world(map.getMapSizeX()-1,map.getMapSizeY()-1));
+	       
+	for(int i = 0; i<5; i++){
+		if (lp[i].x<min.x) min.x=lp[i].x;
+		if (lp[i].y<min.y) min.y=lp[i].y;
+		if (lp[i].x>max.x) max.x=lp[i].x;
+		if (lp[i].y>max.y) max.y=lp[i].y;
+	}
+
+	if ( !map.isInside(min)	|| !map.isInside(max)){
+		Point lmin(map.map2world(0,0));
+		Point lmax(map.map2world(map.getMapSizeX()-1,map.getMapSizeY()-1));
+		//cerr << "CURRENT MAP " << lmin.x << " " << lmin.y << " " << lmax.x << " " << lmax.y << endl;
+		//cerr << "BOUNDARY OVERRIDE " << min.x << " " << min.y << " " << max.x << " " << max.y << endl;
+		min.x=( min.x >= lmin.x )? lmin.x: min.x-m_enlargeStep;
+		max.x=( max.x <= lmax.x )? lmax.x: max.x+m_enlargeStep;
+		min.y=( min.y >= lmin.y )? lmin.y: min.y-m_enlargeStep;
+		max.y=( max.y <= lmax.y )? lmax.y: max.y+m_enlargeStep;
+		map.resize(min.x, min.y, max.x, max.y);
+		//cerr << "RESIZE " << min.x << " " << min.y << " " << max.x << " " << max.y << endl;
+	}
+
+	HierarchicalArray2D<PointMg>::PointSet activeArea;
+	/*allocate the active area*/
+	if (m_generateMap){
+		GridLineTraversalLine line[3];
+		for(int i = 0; i<3; i++)
+			line[i].points = m_mglinePoints[i];
+		
+		GridLineTraversal::gridLine(pi[1], pi[2], &line[0]);
+		GridLineTraversal::gridLine(pi[3], pi[4], &line[1]);
+
+		for(int i = 0; i<line[0].num_points; i++)
+			for(int j = 0; j<line[1].num_points; j++){
+				cout << "i : " << i;
+				cout << " j : " << j;
+				GridLineTraversal::gridLine(m_mglinePoints[0][i], m_mglinePoints[1][j], &line[2]);
+				for(int k = 0; k<line[2].num_points; k++){
+					cout << "k : " << k;
+					cout << "computed point : " << m_mglinePoints[2][k].x << ',' << m_mglinePoints[2][k].y << endl;
+					activeArea.insert(map.storage().patchIndexes(m_mglinePoints[2][k]));
+				}
+			}
+	} else {
+		for(int i = 0; i<5; i++)
+			activeArea.insert(map.storage().patchIndexes(pi[i]));
+	}
+	
+	//this allocates the unallocated cells in the active area of the map
+	//cout << "activeArea::size() " << activeArea.size() << endl;
+/*	
+	cerr << "ActiveArea=";
+	for (HierarchicalArray2D<PointAccumulator>::PointSet::const_iterator it=activeArea.begin(); it!= activeArea.end(); it++){
+		cerr << "(" << it->x <<"," << it->y << ") ";
+	}
+	cerr << endl;
+*/		
+	map.storage().setActiveArea(activeArea, true);
+	m_activeAreaComputed=true;
 }
 
 void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p, const double* readings){

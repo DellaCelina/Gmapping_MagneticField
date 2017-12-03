@@ -39,6 +39,7 @@ inline void GridSlamProcessor::scanMatch_mg(const double (*plainReading)[3]){
     //계산된 파티클과 센서값으로 각 파티클마다 맵을 세팅
     //각 파티클은 자신의 맵을 가지고있고 리샘플링을 통해 최적의 파티클로 수렴하며 가장 확률이 높은 맵이 선택된다.
     m_matcher.invalidateActiveArea();
+    m_matcher.setgenerateMap(true);
     m_matcher.computeActiveArea_mg(it->map_mg, it->pose, plainReading);
   }
   if (m_infoStream)

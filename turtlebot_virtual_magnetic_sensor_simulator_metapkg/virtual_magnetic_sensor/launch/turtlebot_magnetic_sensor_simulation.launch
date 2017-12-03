@@ -4,7 +4,7 @@
 
 <launch>
 
-    <arg name="gazebo_gui" default="true"/>
+    <arg name="gazebo_gui" default="false"/>
 
     <node name="gazebo_tf" pkg="gazebo_tf" type="gazebo_tf" output="screen">
     </node>
