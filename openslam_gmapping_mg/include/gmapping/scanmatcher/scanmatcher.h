@@ -26,6 +26,7 @@ class ScanMatcher{
 		double   registerScan_mg(MgMatcherMap& map, const OrientedPoint& p, const double (*readings)[3]);
 		void setLaserParameters
 			(unsigned int beams, double* angles, const OrientedPoint& lpose);
+		void setMgParameters(double distance, const OrientedPoint& mpose);
 		void setMatchingParameters
 			(double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations, double likelihoodSigma=1, unsigned int likelihoodSkip=0 );
 		void invalidateActiveArea();
@@ -49,9 +50,11 @@ class ScanMatcher{
 		
 		/**laser parameters*/
 		unsigned int m_laserBeams;
+		double m_mgDistance;
 		double       m_laserAngles[LASER_MAXBEAMS];
 		//OrientedPoint m_laserPose;
 		PARAM_SET_GET(OrientedPoint, laserPose, protected, public, public)
+		PARAM_SET_GET(OrientedPoint, mgPose, protected, public, public)
 		PARAM_SET_GET(double, laserMaxRange, protected, public, public)
 		/**scan_matcher parameters*/
 		PARAM_SET_GET(double, usableRange, protected, public, public)

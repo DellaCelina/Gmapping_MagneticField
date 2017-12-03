@@ -29,8 +29,6 @@
 #include "gmapping/gridfastslam/gridslamprocessor.h"
 #include "gmapping/sensor/sensor_base/sensor.h"
 
-#include <visualization_msgs/Marker.h>//for updateMap_mg()
-
 #include <boost/thread.hpp>
 
 class SlamGMapping
@@ -88,9 +86,7 @@ class SlamGMapping
 
     ros::Duration map_update_interval_;
     tf::Transform map_to_odom_;
-    tf::Transform mg_map_to_odom_;//mg added
     boost::mutex map_to_odom_mutex_;
-    boost::mutex mg_map_to_odom_mutex_;//mg added
     boost::mutex map_mutex_;
 
     int laser_count_;
@@ -103,13 +99,8 @@ class SlamGMapping
     std::string base_frame_;
     std::string laser_frame_;
     std::string map_frame_;
-    std::string mg_map_frame_;//mg_added
     std::string odom_frame_;
 	std::string mg_frame_[5];
-
-ros::Publisher pub_marker;//for updateMap_mg()
-    visualization_msgs::Marker mag_sensor_marker;//for updateMap_mg()
-    int marker_id;//for updateMap_mg()
 
 	void updateMap_mg(const gmapping_mg::MagneticFields& mg_msg);	//mg added
     bool getOdomPose_mg(GMapping::OrientedPoint& gmap_pose, const ros::Time& t);    //mg added

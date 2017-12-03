@@ -132,6 +132,7 @@ SlamGMapping::SlamGMapping():
 {
   seed_ = time(NULL);
   init();
+  printf("init() ok\n");
 }
 
 SlamGMapping::SlamGMapping(ros::NodeHandle& nh, ros::NodeHandle& pnh):
@@ -184,6 +185,16 @@ void SlamGMapping::init()
     map_frame_ = "map";
   if(!private_nh_.getParam("odom_frame", odom_frame_))
     odom_frame_ = "odom";
+  if(!private_nh_.getParam("mag1_frame", mg_frame_[0]))
+    mg_frame_[0] = "mag1";
+  if(!private_nh_.getParam("mag2_frame", mg_frame_[1]))
+    mg_frame_[1] = "mag2";
+  if(!private_nh_.getParam("mag3_frame", mg_frame_[2]))
+    mg_frame_[2] = "mag3";
+  if(!private_nh_.getParam("mag4_frame", mg_frame_[3]))
+    mg_frame_[3] = "mag4";
+  if(!private_nh_.getParam("mag5_frame", mg_frame_[4]))
+    mg_frame_[4] = "mag5";
 
   private_nh_.param("transform_publish_period", transform_publish_period_, 0.05);
 
@@ -259,6 +270,7 @@ void SlamGMapping::init()
 
 void SlamGMapping::startLiveSlam()
 {
+  // ROS용 pub, service 등등
   entropy_publisher_ = private_nh_.advertise<std_msgs::Float64>("entropy", 1, true);
   sst_ = node_.advertise<nav_msgs::OccupancyGrid>("map", 1, true);
   sstm_ = node_.advertise<nav_msgs::MapMetaData>("map_metadata", 1, true);
@@ -266,11 +278,18 @@ void SlamGMapping::startLiveSlam()
   //scan_filter_sub_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(node_, "scan", 5);
   //scan_filter_ = new tf::MessageFilter<sensor_msgs::LaserScan>(*scan_filter_sub_, tf_, odom_frame_, 5);
   //scan_filter_->registerCallback(boost::bind(&SlamGMapping::laserCallback, this, _1));
-  mg_msg_filter_sub_ = new message_filters::Subscriber<gmapping::MagneticFields>(node_, "mg_msg", 5);	//mg added
-  mg_msg_filter_ = new tf::MessageFilter<gmapping::MagneticFields>(*mg_msg_filter_sub_, tf_, odom_frame_, 5);	//mg added
+
+  // Message Filter : 기본적으로 subscriber와 같으나 TF값의 시간(Stamp값)의 
+  // 싱크를 맞춰주기 위해 타겟(odom)의 TF를 수신했을 때 Callback을 호출한다.
+  mg_msg_filter_sub_ = new message_filters::Subscriber<gmapping_mg::MagneticFields>(node_, "mag_scan", 5);	//mg added
+  mg_msg_filter_ = new tf::MessageFilter<gmapping_mg::MagneticFields>(*mg_msg_filter_sub_, tf_, odom_frame_, 5);	//mg added
+  //callback if frame_id == odom_frame_
   mg_msg_filter_->registerCallback(boost::bind(&SlamGMapping::mgCallback, this, _1));
 
+  // map_to_odom TF를 publish하기 위한 Thread
   transform_thread_ = new boost::thread(boost::bind(&SlamGMapping::publishLoop, this, transform_publish_period_));
+
+  printf("startLiveSlam() ok\n");
 }
 
 void SlamGMapping::startReplay(const std::string & bag_fname, std::string scan_topic)
@@ -373,6 +392,30 @@ SlamGMapping::~SlamGMapping()
 }
 
 bool
+SlamGMapping::getOdomPose_mg(GMapping::OrientedPoint& gmap_pose, const ros::Time& t)
+{
+  // Get the pose of the centered laser at the right time
+  centered_mg_pose_.stamp_ = t;
+  // Get the laser's pose that is centered
+  tf::Stamped<tf::Transform> odom_pose;
+  try
+  {
+    tf_.transformPose(odom_frame_, centered_mg_pose_, odom_pose);
+  }
+  catch(tf::TransformException e)
+  {
+    ROS_WARN("Failed to compute odom pose, skipping scan (%s)", e.what());
+    return false;
+  }
+  double yaw = tf::getYaw(odom_pose.getRotation());
+
+  gmap_pose = GMapping::OrientedPoint(odom_pose.getOrigin().x(),
+                                      odom_pose.getOrigin().y(),
+                                      yaw);
+  return true;
+}
+
+bool
 SlamGMapping::getOdomPose(GMapping::OrientedPoint& gmap_pose, const ros::Time& t)
 {
   // Get the pose of the centered laser at the right time
@@ -396,17 +439,24 @@ SlamGMapping::getOdomPose(GMapping::OrientedPoint& gmap_pose, const ros::Time& t
   return true;
 }
 
-bool SlamGMapping::initMapper_mg(const gmapping::MagneticFields& mg_msg){
-  mg_frame_= mg_msg.header.frame_id;
+bool SlamGMapping::initMapper_mg(const gmapping_mg::MagneticFields& mg_msg)
+{
+  printf("initMapper_mg()\n");
+
+  //mg_frame_= mg_msg.header.frame_id;//"odom"
   // Get the laser's pose, relative to base.
+  
+  // 센서의 위치의 validity를 찾기 위한 Flow
+  std::string mg_center = mg_msg.header.frame_id;
   tf::Stamped<tf::Pose> ident;
   tf::Stamped<tf::Transform> mg_pose;
   ident.setIdentity();
-  ident.frame_id_ = mg_frame_;
+  ident.frame_id_ = mg_center;
   ident.stamp_ = mg_msg.header.stamp;
+
   try
   {
-    tf_.transformPose(base_frame_, ident, mg_pose);
+    tf_.transformPose(base_frame_, ident, mg_pose);//base_frame_ == "base_footprint"
   }
   catch(tf::TransformException e)
   {
@@ -418,12 +468,11 @@ bool SlamGMapping::initMapper_mg(const gmapping::MagneticFields& mg_msg){
   // create a point 1m above the laser position and transform it into the laser-frame
   tf::Vector3 v;
   v.setValue(0, 0, 1 + mg_pose.getOrigin().z());
-  tf::Stamped<tf::Vector3> up(v, mg_msg.header.stamp,
-                                      base_frame_);
+  tf::Stamped<tf::Vector3> up(v, mg_msg.header.stamp, base_frame_);
   try
   {
-    tf_.transformPoint(mg_frame_, up, up);
-    ROS_DEBUG("Z-Axis in sensor frame: %.3f", up.z());
+    tf_.transformPoint(mg_center, up, up);
+    printf("Z-Axis in sensor frame: %.3f\n", up.z());
   }
   catch(tf::TransformException& e)
   {
@@ -440,29 +489,85 @@ bool SlamGMapping::initMapper_mg(const gmapping::MagneticFields& mg_msg){
     return false;
   }
 
+  tf::Vector3 mv;
+  mv.setValue(0, 0, 0);
+  tf::Stamped<tf::Vector3> mg_point(mv, mg_msg.header.stamp, mg_frame_[1]);
+  double distance = 0;
+  try{
+    tf_.transformPoint(mg_center, mg_point, mg_point);
+    distance = fabs(mg_point.x());
+    printf("distance : %lf\n", distance);
+  }catch(tf::TransformException& e){
+    ROS_WARN("Unable to determine distance: %s",
+             e.what());
+    return false;
+  }
+
+
+  // gsp_laser_beam_count_
+  // centered_laser_pose_
+  if(up.z() > 0){
+    centered_mg_pose_ = tf::Stamped<tf::Pose>(tf::Transform(tf::createQuaternionFromRPY(0,0,0), tf::Vector3(0,0,0)), ros::Time::now(), mg_center);
+    printf("Mg is mounted upwards.\n");
+  }else{
+    centered_mg_pose_ = tf::Stamped<tf::Pose>(tf::Transform(tf::createQuaternionFromRPY(M_PI,0,0), tf::Vector3(0,0,0)), ros::Time::now(), mg_center);
+    printf("Mg is mounted upside down.\n");
+  }
+  // laser_angles_
+
+
+
+
   GMapping::OrientedPoint gmap_pose(0, 0, 0);
 
+
+
   // setting maxRange and maxUrange here so we can set a reasonable default
-  ros::NodeHandle private_nh_("~");
+  //ros::NodeHandle private_nh_("~");
+  // maxRange_
+  // maxUrange_
+
+
+
+
   // The laser must be called "FLASER".
   // We pass in the absolute value of the computed angle increment, on the
   // assumption that GMapping requires a positive angle increment.  If the
   // actual increment is negative, we'll swap the order of ranges before
   // feeding each scan to GMapping.
-  gsp_mg_ = new GMapping::MgSensor("FMagnetic", 3, 3, 0.5, gmap_pose);
 
+  // 이름은 FMagnetic, 위치는 gmap_pose, 센서간 거리 (5개의 점에서 센터와 다른 점과의 x delta = y delta로 가정, 이때 x delta의 값)는 distance로 초기화
+  gsp_mg_ = new GMapping::MgSensor("FMagnetic", distance, gmap_pose);
+
+
+
+//check finished so far
+//check finished so far
+//check finished so far
+  
+
+  // GMapping::SensorMap smap;
+  // smap.insert(make_pair(gsp_mg_->getName(), gsp_mg_));
+  // gsp_->setSensorMap(smap);
+
+
+
+  //Odom의 프레임만 초기화해주고 넘어간다.
   gsp_odom_ = new GMapping::OdometrySensor(odom_frame_);
   ROS_ASSERT(gsp_odom_);
 
 
   /// @todo Expose setting an initial pose
   GMapping::OrientedPoint initialPose;
-  if(!getOdomPose(initialPose, mg_msg.header.stamp))
+  if(!getOdomPose_mg(initialPose, mg_msg.header.stamp))
   {
     ROS_WARN("Unable to determine inital pose of laser! Starting point will be set to zero.");
     initialPose = GMapping::OrientedPoint(0.0, 0.0, 0.0);
   }
+  else
+    printf("get odom pose ok\n");
 
+  //파라미터 세팅
   gsp_->setMatchingParameters(maxUrange_, maxRange_, sigma_,
                               kernelSize_, lstep_, astep_, iterations_,
                               lsigma_, ogain_, lskip_);
@@ -471,6 +576,8 @@ bool SlamGMapping::initMapper_mg(const gmapping::MagneticFields& mg_msg){
   gsp_->setUpdateDistances(linearUpdate_, angularUpdate_, resampleThreshold_);
   gsp_->setUpdatePeriod(temporalUpdate_);
   gsp_->setgenerateMap(false);
+
+  //파티클들의 초기화를 해줌, Magnetic을 위해 파티클들의 초기값을 수정했음
   gsp_->GridSlamProcessor::init(particles_, xmin_, ymin_, xmax_, ymax_,
                                 delta_, initialPose);
   gsp_->setllsamplerange(llsamplerange_);
@@ -500,6 +607,7 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   ident.setIdentity();
   ident.frame_id_ = laser_frame_;
   ident.stamp_ = scan.header.stamp;
+
   try
   {
     tf_.transformPose(base_frame_, ident, laser_pose);
@@ -635,24 +743,33 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   return true;
 }
 
-bool SlamGMapping::addScan_mg(const gmapping::MagneticFields& mg_msg, GMapping::OrientedPoint& gmap_pose)
+bool SlamGMapping::addScan_mg(const gmapping_mg::MagneticFields& mg_msg, GMapping::OrientedPoint& gmap_pose)
 {
-  if(!getOdomPose(gmap_pose, mg_msg.header.stamp))
+  // 현재 위치(odom)의 정보를 가져온다.
+  if(!getOdomPose_mg(gmap_pose, mg_msg.header.stamp))
      return false;
   
-  double (*mg_values)[2] = new double[9][2]; 
-  for(int i = 0; i<9; i++){
+  // Sensor Reading(open_gmapping의 센서값을 위한 구조체)를 세팅하게위해 값을 저장
+  double (*mg_values)[3] = new double[5][3]; 
+  for(int i = 0; i<5; i++){
 	 mg_values[i][0] = mg_msg.magnetic_field[i].x;
 	 mg_values[i][1] = mg_msg.magnetic_field[i].y;
 	 mg_values[i][2] = mg_msg.magnetic_field[i].z;
   }
 
+  //Magnetic field를 위한 구조체 reading
   GMapping::MgReading reading(mg_values, gsp_mg_);
 
   delete[] mg_values;
 
   reading.setPose(gmap_pose);
 
+  
+  printf("scanpose (%.3f): %.3f %.3f %.3f\n",
+            mg_msg.header.stamp.toSec(),
+            gmap_pose.x,
+            gmap_pose.y,
+            gmap_pose.theta);
   /*
   ROS_DEBUG("scanpose (%.3f): %.3f %.3f %.3f\n",
             scan.header.stamp.toSec(),
@@ -662,6 +779,7 @@ bool SlamGMapping::addScan_mg(const gmapping::MagneticFields& mg_msg, GMapping::
             */
   ROS_DEBUG("processing scan");
 
+  //센서값을 이용, Grid slam process(Gmapping의 main 클래스)를 이용, slam을 process한다.
   return gsp_->processScan_mg(reading);
 }
 
@@ -724,7 +842,9 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
   return gsp_->processScan(reading);
 }
 
-void SlamGMapping::mgCallback(const gmapping::MagneticFields::ConstPtr& mg_msg){
+void SlamGMapping::mgCallback(const gmapping_mg::MagneticFields::ConstPtr& mg_msg){
+  printf("mgCallback()\n");
+
 	mg_count_++;
 	if((mg_count_% throttle_mg_) != 0)
 		return;
@@ -734,6 +854,7 @@ void SlamGMapping::mgCallback(const gmapping::MagneticFields::ConstPtr& mg_msg){
   // We can't initialize the mapper until we've got the first scan
   if(!got_first_mg_)
   {
+    // TF를 이용해서 open gmapping의 센서 구조체를 초기화해주고 파라미터 세팅
     if(!initMapper_mg(*mg_msg))
       return;
     got_first_mg_ = true;
@@ -741,10 +862,14 @@ void SlamGMapping::mgCallback(const gmapping::MagneticFields::ConstPtr& mg_msg){
 
   GMapping::OrientedPoint odom_pose;
 
+  // 받아온 센서값을 이용, SLAM을 적용하고 파티클들의 값을 얻어온다.
+  // SLAM이 적용된 파티클중 가장 best의 값을 이용해 TF와 Map을 세팅
+  // 여기서 각각 파티클에는 각자의 맵이 저장되어있다. (맵 구조체는 include의 grid폴더 참조)
   if(addScan_mg(*mg_msg, odom_pose))
   {
     ROS_DEBUG("mg processed");
-
+    
+    // 프로세싱된 파티클중 best position을 가져오고 map_to_odom TF를 생성
     GMapping::OrientedPoint mpose = gsp_->getParticles()[gsp_->getBestParticleIndex()].pose;
     ROS_DEBUG("new best pose: %.3f %.3f %.3f", mpose.x, mpose.y, mpose.theta);
     ROS_DEBUG("odom pose: %.3f %.3f %.3f", odom_pose.x, odom_pose.y, odom_pose.theta);
@@ -759,6 +884,7 @@ void SlamGMapping::mgCallback(const gmapping::MagneticFields::ConstPtr& mg_msg){
 
     if(!got_map_ || (mg_msg->header.stamp - last_map_update) > map_update_interval_)
     {
+      // best position 파티클에 저장되어있는 맵을 이용해 ros에 출력할 수 있도록 변환 시켜준다.
       updateMap_mg(*mg_msg);
       last_map_update = mg_msg->header.stamp;
       ROS_DEBUG("Updated the map");
@@ -834,7 +960,7 @@ SlamGMapping::computePoseEntropy()
   return -entropy;
 }
 
-void SlamGMapping::updateMap_mg(const gmapping::MagneticFields& mg_msg){
+void SlamGMapping::updateMap_mg(const gmapping_mg::MagneticFields& mg_msg){
 }
 
 void

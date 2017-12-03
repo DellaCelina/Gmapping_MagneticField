@@ -118,6 +118,7 @@ Initial map dimensions and resolution:
 #include "gmapping/sensor/sensor_range/rangesensor.h"
 #include "gmapping/sensor/sensor_odometry/odometrysensor.h"
 
+
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 #include <boost/foreach.hpp>
@@ -128,6 +129,7 @@ Initial map dimensions and resolution:
 
 SlamGMapping::SlamGMapping():
   map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
+  mg_map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
   laser_count_(0), private_nh_("~"), scan_filter_sub_(NULL), scan_filter_(NULL), mg_msg_filter_sub_(NULL), mg_msg_filter_(NULL), transform_thread_(NULL)
 {
   seed_ = time(NULL);
@@ -137,6 +139,7 @@ SlamGMapping::SlamGMapping():
 
 SlamGMapping::SlamGMapping(ros::NodeHandle& nh, ros::NodeHandle& pnh):
   map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
+  mg_map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
   laser_count_(0),node_(nh), private_nh_(pnh), scan_filter_sub_(NULL), scan_filter_(NULL), mg_msg_filter_sub_(NULL), mg_msg_filter_(NULL), transform_thread_(NULL)
 {
   seed_ = time(NULL);
@@ -145,6 +148,7 @@ SlamGMapping::SlamGMapping(ros::NodeHandle& nh, ros::NodeHandle& pnh):
 
 SlamGMapping::SlamGMapping(long unsigned int seed, long unsigned int max_duration_buffer):
   map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
+  mg_map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
   laser_count_(0), private_nh_("~"), scan_filter_sub_(NULL), scan_filter_(NULL), mg_msg_filter_sub_(NULL), mg_msg_filter_(NULL), transform_thread_(NULL),
   seed_(seed), tf_(ros::Duration(max_duration_buffer))
 {
@@ -173,7 +177,24 @@ void SlamGMapping::init()
   got_map_ = false;
   
 
-  
+  marker_id = 0;
+
+  mag_sensor_marker.header.frame_id = "mg_map";
+  mag_sensor_marker.ns = "my_ns";
+  mag_sensor_marker.action = visualization_msgs::Marker::ADD;
+  mag_sensor_marker.type = 0;
+
+  mag_sensor_marker.scale.x = 0.01;
+  mag_sensor_marker.scale.y = 0.02;
+  mag_sensor_marker.scale.z = 0.04;
+
+  mag_sensor_marker.color.a = 1.0;//alpha
+
+  mag_sensor_marker.color.r = 1.0;
+  mag_sensor_marker.color.g = 0.0;
+  mag_sensor_marker.color.b = 0.0;
+
+
   // Parameters used by our GMapping wrapper
   if(!private_nh_.getParam("throttle_scans", throttle_scans_))
     throttle_scans_ = 1;
@@ -183,6 +204,8 @@ void SlamGMapping::init()
     base_frame_ = "base_link";
   if(!private_nh_.getParam("map_frame", map_frame_))
     map_frame_ = "map";
+  if(!private_nh_.getParam("mg_map_frame", mg_map_frame_))
+    mg_map_frame_ = "mg_map";
   if(!private_nh_.getParam("odom_frame", odom_frame_))
     odom_frame_ = "odom";
   if(!private_nh_.getParam("mag1_frame", mg_frame_[0]))
@@ -274,6 +297,7 @@ void SlamGMapping::startLiveSlam()
   entropy_publisher_ = private_nh_.advertise<std_msgs::Float64>("entropy", 1, true);
   sst_ = node_.advertise<nav_msgs::OccupancyGrid>("map", 1, true);
   sstm_ = node_.advertise<nav_msgs::MapMetaData>("map_metadata", 1, true);
+  pub_marker = node_.advertise<visualization_msgs::Marker>("mg_map", 5000, 0);//for updataMap_mg
   ss_ = node_.advertiseService("dynamic_map", &SlamGMapping::mapCallback, this);
   //scan_filter_sub_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(node_, "scan", 5);
   //scan_filter_ = new tf::MessageFilter<sensor_msgs::LaserScan>(*scan_filter_sub_, tf_, odom_frame_, 5);
@@ -538,6 +562,10 @@ bool SlamGMapping::initMapper_mg(const gmapping_mg::MagneticFields& mg_msg)
 
   // 이름은 FMagnetic, 위치는 gmap_pose, 센서간 거리 (5개의 점에서 센터와 다른 점과의 x delta = y delta로 가정, 이때 x delta의 값)는 distance로 초기화
   gsp_mg_ = new GMapping::MgSensor("FMagnetic", distance, gmap_pose);
+
+  GMapping::SensorMap smap;
+  smap.insert(make_pair(gsp_mg_->getName(), gsp_mg_));
+  gsp_->setSensorMap_mg(smap);
 
 
 
@@ -878,9 +906,9 @@ void SlamGMapping::mgCallback(const gmapping_mg::MagneticFields::ConstPtr& mg_ms
     tf::Transform mg_to_map = tf::Transform(tf::createQuaternionFromRPY(0, 0, mpose.theta), tf::Vector3(mpose.x, mpose.y, 0.0)).inverse();
     tf::Transform odom_to_mg = tf::Transform(tf::createQuaternionFromRPY(0, 0, odom_pose.theta), tf::Vector3(odom_pose.x, odom_pose.y, 0.0));
 
-    map_to_odom_mutex_.lock();
-    map_to_odom_ = (odom_to_mg * mg_to_map).inverse();
-    map_to_odom_mutex_.unlock();
+    mg_map_to_odom_mutex_.lock();
+    mg_map_to_odom_ = (odom_to_mg * mg_to_map).inverse();
+    mg_map_to_odom_mutex_.unlock();
 
     if(!got_map_ || (mg_msg->header.stamp - last_map_update) > map_update_interval_)
     {
@@ -960,13 +988,162 @@ SlamGMapping::computePoseEntropy()
   return -entropy;
 }
 
+
+
+
 void SlamGMapping::updateMap_mg(const gmapping_mg::MagneticFields& mg_msg){
+
+  printf("Update map mg()\n");
+  // boost::mutex::scoped_lock map_lock (map_mutex_);
+  // GMapping::ScanMatcher matcher;
+
+  // matcher.setLaserParameters(scan.ranges.size(), &(laser_angles_[0]),
+  //                            gsp_laser_->getPose());
+
+  // matcher.setlaserMaxRange(maxRange_);
+  // matcher.setusableRange(maxUrange_);
+  // matcher.setgenerateMap(true);
+
+  GMapping::GridSlamProcessor::Particle best = gsp_->getParticles()[gsp_->getBestParticleIndex()];
+  // std_msgs::Float64 entropy;
+  // entropy.data = computePoseEntropy();
+  // if(entropy.data > 0.0)
+  //   entropy_publisher_.publish(entropy);
+
+  marker_id = 0;
+
+  if(!got_map_) {
+    map_.map.info.resolution = delta_;
+    map_.map.info.origin.position.x = 0.0;
+    map_.map.info.origin.position.y = 0.0;
+    map_.map.info.origin.position.z = 0.0;
+    map_.map.info.origin.orientation.x = 0.0;
+    map_.map.info.origin.orientation.y = 0.0;
+    map_.map.info.origin.orientation.z = 0.0;
+    map_.map.info.origin.orientation.w = 1.0;
+  } 
+
+  GMapping::Point center;
+  center.x=(xmin_ + xmax_) / 2.0;
+  center.y=(ymin_ + ymax_) / 2.0;
+
+  //GMapping::MgMatcherMap mmap(center, xmin_, ymin_, xmax_, ymax_, delta_);
+  GMapping::MgMatcherMap &mmap = best.map_mg;
+
+  // ROS_DEBUG("Trajectory tree:");
+  // for(GMapping::GridSlamProcessor::TNode* n = best.node;      n;      n = n->parent)
+  // {
+  //   ROS_DEBUG("  %.3f %.3f %.3f",
+  //             n->pose.x,
+  //             n->pose.y,
+  //             n->pose.theta);
+  //   if(!n->reading)
+  //   {
+  //     ROS_DEBUG("Reading is NULL");
+  //     continue;
+  //   }
+  //   matcher.invalidateActiveArea();
+  //   matcher.computeActiveArea(mmap, n->pose, &((*n->reading)[0]));
+  //   matcher.registerScan(mmap, n->pose, &((*n->reading)[0]));
+  // }
+
+  // the map may have expanded, so resize ros message as well
+  if(map_.map.info.width != (unsigned int) mmap.getMapSizeX() || map_.map.info.height != (unsigned int) mmap.getMapSizeY()) {
+
+    // NOTE: The results of ScanMatcherMap::getSize() are different from the parameters given to the constructor
+    //       so we must obtain the bounding box in a different way
+    GMapping::Point wmin = mmap.map2world(GMapping::IntPoint(0, 0));
+    GMapping::Point wmax = mmap.map2world(GMapping::IntPoint(mmap.getMapSizeX(), mmap.getMapSizeY()));
+    xmin_ = wmin.x; ymin_ = wmin.y;
+    xmax_ = wmax.x; ymax_ = wmax.y;
+    
+    printf("map size is now %dx%d pixels (%f,%f)-(%f, %f)\n", mmap.getMapSizeX(), mmap.getMapSizeY(),
+              xmin_, ymin_, xmax_, ymax_);
+
+    map_.map.info.width = mmap.getMapSizeX();
+    map_.map.info.height = mmap.getMapSizeY();
+    map_.map.info.origin.position.x = xmin_;
+    map_.map.info.origin.position.y = ymin_;
+    map_.map.data.resize(map_.map.info.width * map_.map.info.height);
+
+    printf("map origin: (%f, %f)\n", map_.map.info.origin.position.x, map_.map.info.origin.position.y);
+  }
+
+  geometry_msgs::Point start_point;
+  geometry_msgs::Point end_point;
+  start_point.z = 0.1;
+
+  for(int x=0; x < mmap.getMapSizeX(); x++)
+  {
+    for(int y=0; y < mmap.getMapSizeY(); y++)
+    {
+      /// @todo Sort out the unknown vs. free vs. obstacle thresholding
+      GMapping::IntPoint p(x, y);
+     // double occ=mmap.cell(p);
+     // assert(occ <= 1.0);
+     // map_.map.data[MAP_IDX(map_.map.info.width, x, y)] = rand() % 100;
+
+      // if(occ < 0)
+      //   map_.map.data[MAP_IDX(map_.map.info.width, x, y)] = -1;
+      // else if(occ > occ_thresh_)
+      // {
+      //   //map_.map.data[MAP_IDX(map_.map.info.width, x, y)] = (int)round(occ*100.0);
+      //   map_.map.data[MAP_IDX(map_.map.info.width, x, y)] = 100;
+      // }
+      // else
+      //   map_.map.data[MAP_IDX(map_.map.info.width, x, y)] = 0;
+
+
+      GMapping::Point pw = mmap.map2world(p);
+
+      start_point.x = pw.x;
+      start_point.y = pw.y;//printf("%d, %d : %lf %lf\n", x, y, start_point.x, start_point.y);
+      start_point.z = mmap.cell(p).vec.x * 0.001;//printf("%d, %d : %lf %lf\n", x, y, start_point.x, start_point.y);
+
+if(start_point.x > 1.9 ||  start_point.x < -2.0 ||  start_point.y > 0.8 ||  start_point.y < -0.9)
+  continue;
+
+      end_point.x = start_point.x + mmap.cell(pw).vec.x * 0.0001;//0.0001 is arrow length gain
+      end_point.y = start_point.y + mmap.cell(pw).vec.y * 0.0001;
+      end_point.z = start_point.z + mmap.cell(pw).vec.z * 0.0001;
+
+      if(mmap.cell(pw).vec.x == 0)
+        printf("000!! %d %d", p.x, p.y);
+
+printf("marker(%f, %f) : %f %f %f\n", pw.x, pw.y, mmap.cell(pw).vec.x, mmap.cell(pw).vec.y, mmap.cell(pw).vec.z);
+
+      mag_sensor_marker.header.stamp = ros::Time();
+      mag_sensor_marker.id = marker_id++;//overflow possible
+
+      mag_sensor_marker.points.clear();
+      mag_sensor_marker.points.push_back(start_point);
+      mag_sensor_marker.points.push_back(end_point);
+
+      pub_marker.publish(mag_sensor_marker);
+
+    }
+    usleep(10000);
+  }
+
+  got_map_ = true;
+
+  //make sure to set the header information on the map
+  // map_.map.header.stamp = ros::Time::now();
+  // map_.map.header.frame_id = tf_.resolve( map_frame_ );
+
+  // sst_.publish(map_.map);
+  // sstm_.publish(map_.map.info);
+
+
+
+
+
 }
 
 void
 SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
 {
-  ROS_DEBUG("Update map");
+  printf("Update map\n");
   boost::mutex::scoped_lock map_lock (map_mutex_);
   GMapping::ScanMatcher matcher;
 
@@ -1092,4 +1269,9 @@ void SlamGMapping::publishTransform()
   ros::Time tf_expiration = ros::Time::now() + ros::Duration(tf_delay_);
   tfB_->sendTransform( tf::StampedTransform (map_to_odom_, tf_expiration, map_frame_, odom_frame_));
   map_to_odom_mutex_.unlock();
+
+  mg_map_to_odom_mutex_.lock();
+  tf_expiration = ros::Time::now() + ros::Duration(tf_delay_);
+  tfB_->sendTransform( tf::StampedTransform (mg_map_to_odom_, tf_expiration, mg_map_frame_, odom_frame_));
+  mg_map_to_odom_mutex_.unlock();
 }

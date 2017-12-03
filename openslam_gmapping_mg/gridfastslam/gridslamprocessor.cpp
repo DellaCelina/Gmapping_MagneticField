@@ -264,6 +264,25 @@ void GridSlamProcessor::setMotionModelParameters
     m_matcher.setLaserParameters(m_beams, angles, rangeSensor->getPose());
     delete [] angles;
   }
+
+  void GridSlamProcessor::setSensorMap_mg(const SensorMap& smap){
+    
+    /*
+      Construct the angle table for the sensor
+      
+      FIXME For now detect the readings of only the front laser, and assume its pose is in the center of the robot 
+    */
+    
+    SensorMap::const_iterator mg_it =smap.find(std::string("FMagnetic"));
+    if (mg_it==smap.end()){
+      cerr << "Attempting to load the new carmen log format" << endl;
+      mg_it=smap.find(std::string("ROBOTMagnetic1"));
+      assert(mg_it!=smap.end());
+    }
+    const MgSensor* mgSensor=dynamic_cast<const MgSensor*>((mg_it->second));
+
+    m_matcher.setMgParameters(mgSensor->distance(), mgSensor->getPose());
+  }
   
   void GridSlamProcessor::init(unsigned int size, double xmin, double ymin, double xmax, double ymax, double delta, OrientedPoint initialPose){
     m_xmin=xmin;
@@ -291,8 +310,8 @@ void GridSlamProcessor::setMotionModelParameters
     Vec3 mag_map[13][28];
     const float map_dist = 0.15;
     const float dist = 0.05;
-    double map_width = x_num * map_dist;
-    double map_height = y_num * map_dist;
+    double map_width = round(x_num * map_dist * 10) / 10;
+    double map_height = round(y_num * map_dist * 10) / 10;
     ifstream openFile("/home/d/catkin_ws/src/Gmapping_MagneticField/turtlebot_virtual_magnetic_sensor_simulator_metapkg/virtual_magnetic_sensor/map/magnetic_map.txt");
     if(openFile.is_open()){
       string line_str;
@@ -325,6 +344,7 @@ void GridSlamProcessor::setMotionModelParameters
         Vec3 x2 = p3 + (p4 - p3) / map_dist * (i - map_dist * v_i);
         Vec3 rslt = x1 + (x2 - x1) / map_dist * (j - map_dist * v_j);
         m_map.cell(Point(i - map_width/2, j - map_height/2)).update(true, rslt);
+        if(m_map.cell(Point(i - map_width/2, j-map_height/2)).vec.x == 0) printf("fail cell %f\n");
         printf("Save map vec: %f %f %f using interpolation to %f, %f\n", rslt.x, rslt.y, rslt.z, i - map_width/2, j - map_height/2);
       }
 

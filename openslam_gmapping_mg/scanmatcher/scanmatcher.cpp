@@ -661,6 +661,12 @@ void ScanMatcher::setLaserParameters
 	//m_laserAngles=new double[beams];
 	memcpy(m_laserAngles, angles, sizeof(double)*m_laserBeams);	
 }
+
+void ScanMatcher::setMgParameters
+	(double distance, const OrientedPoint& mpose){
+	m_mgDistance = distance;
+	m_mgPose = mpose;
+}
 	
 
 double ScanMatcher::likelihood
